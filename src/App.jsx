@@ -2,7 +2,7 @@ import "./App.css";
 import { useEffect, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import { io } from "socket.io-client";
-const socket = io("https://tic-tac-toe-back-452m.onrender.com"); // Adjust your server URL
+const socket = io("http://localhost:4445"); // Adjust your server URL
 
 const App = () => {
   const [connect, setConnect] = useState(false);
@@ -15,8 +15,8 @@ const App = () => {
   const [message, setMessage] = useState("");
   const [isMicOn, setIsMicOn] = useState(false); // Track mic state
   const [audioStream, setAudioStream] = useState(null);
-  const audioRef = useRef(null); // To play the incoming audio
-  // Listen for incoming messages
+  const audioContextRef = useRef(null); // To manage audio context
+
   useEffect(() => {
     socket.on("create", (data) => {
       setUser("X");
@@ -29,10 +29,25 @@ const App = () => {
       setData(data.data);
       setConnect(true);
     });
-    socket.on("receive_audio", (audioData) => {
-      const audio = new Audio(audioData);
-      audio.play();
+
+    socket.on("receive_audio_chunk", ({ audioData }) => {
+      if (!audioContextRef.current) {
+        audioContextRef.current = new AudioContext();
+      }
+
+      const audioBuffer = audioContextRef.current.createBuffer(
+        1,
+        audioData.length,
+        audioContextRef.current.sampleRate
+      );
+      audioBuffer.copyToChannel(new Float32Array(audioData), 0, 0);
+
+      const source = audioContextRef.current.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContextRef.current.destination);
+      source.start(0);
     });
+
     socket.on("winner", (data) => {
       toast(data.message);
       setWinningPattern(data.pattern);
@@ -63,6 +78,7 @@ const App = () => {
   const handleRoomCreate = () => {
     socket.emit("create");
   };
+
   const sendMessage = () => {
     if (message.trim()) {
       const messageData = {
@@ -75,6 +91,7 @@ const App = () => {
       setMessage("");
     }
   };
+
   const clickHandle = (index) => {
     if (data[index]) {
       return toast("Already used!");
@@ -86,9 +103,9 @@ const App = () => {
     e.preventDefault();
     socket.emit("join", room);
   };
+
   const handleCopy = () => {
     if (navigator.clipboard) {
-      // Use clipboard API for modern browsers (works on desktop and mobile web)
       navigator.clipboard
         .writeText(room)
         .then(() => {
@@ -98,7 +115,6 @@ const App = () => {
           toast.error("Failed to copy Room ID: " + err);
         });
     } else {
-      // Fallback for browsers or devices that don't support the Clipboard API
       const textArea = document.createElement("textarea");
       textArea.value = room;
       document.body.appendChild(textArea);
@@ -113,10 +129,10 @@ const App = () => {
       }
     }
   };
-  const messagesEndRef = useRef(null); // Create a ref for the last message
+
+  const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
-    // Scroll to the last message after a short delay to ensure DOM updates
     setTimeout(() => {
       messagesEndRef.current?.scrollIntoView({
         behavior: "smooth",
@@ -126,38 +142,33 @@ const App = () => {
   };
 
   useEffect(() => {
-    // Scroll to the last message whenever the messages array changes
     scrollToBottom();
   }, [messages]);
 
   const toggleMic = async () => {
     if (isMicOn) {
       audioStream.getTracks().forEach((track) => track.stop());
-      // Stop the audio stream and close the microphone
       setIsMicOn(false);
     } else {
       try {
-        // Request microphone access from the user
-        const stream = await navigator.mediaDevices.getUserMedia({
-          audio: true,
-        });
-
-        // Store the stream for future use
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         setAudioStream(stream);
         setIsMicOn(true);
 
-        // Emit audio stream to the server (if using for voice chat)
-        socket.emit("send_audio", stream);
+        const audioContext = new AudioContext();
+        const source = audioContext.createMediaStreamSource(stream);
+        const processor = audioContext.createScriptProcessor(4096, 1, 1);
 
-        // Optionally, you can attach the stream to an audio element if you want to play it back locally
-        const audioElement = new Audio();
-        audioElement.srcObject = stream;
-        audioElement.play();
+        processor.onaudioprocess = (e) => {
+          const audioData = e.inputBuffer.getChannelData(0);
+          socket.emit("send_audio_chunk", { audioData: Array.from(audioData), room });
+        };
+
+        source.connect(processor);
+        processor.connect(audioContext.destination);
       } catch (error) {
         console.error("Error accessing microphone:", error);
-        toast.error(
-          "Microphone access denied. Please enable microphone permissions."
-        );
+        toast.error("Microphone access denied. Please enable microphone permissions.");
       }
     }
   };
@@ -203,7 +214,7 @@ const App = () => {
               Room ID: {room} | Player: {user}
             </span>
             <button className="button" onClick={toggleMic}>
-              {isMicOn ? "Turn Mic Off" : "Turn Mic On"}
+              {isMicOn ? "🎤 Mic On" : "🎙️ Mic Off"}
             </button>
             <button
               className="button"
@@ -220,6 +231,7 @@ const App = () => {
           </h1>
         </div>
       )}
+
       {connect && (
         <div className="container">
           <table>
@@ -253,7 +265,6 @@ const App = () => {
                   <b>{msg.user}:</b> {msg.text}
                 </div>
               ))}
-              {/* This is the element we scroll to */}
               <div ref={messagesEndRef} />
             </div>
             <div className="message-input">
