@@ -157,7 +157,7 @@ const App = () => {
 
         const audioContext = new AudioContext();
         const source = audioContext.createMediaStreamSource(stream);
-        const processor = audioContext.createScriptProcessor(4096, 1, 1);
+        const processor = audioContext.createScriptProcessor(1024, 1, 1);
 
         processor.onaudioprocess = (e) => {
           const audioData = e.inputBuffer.getChannelData(0);
