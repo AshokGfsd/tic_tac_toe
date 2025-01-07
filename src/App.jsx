@@ -2,7 +2,7 @@ import "./App.css";
 import { useEffect, useRef, useState } from "react";
 import { ToastContainer, toast } from "react-toastify";
 import { io } from "socket.io-client";
-const socket = io("http://localhost:4445"); // Adjust your server URL
+const socket = io("https://tic-tac-toe-back-452m.onrender.com"); // Adjust your server URL
 
 const App = () => {
   const [connect, setConnect] = useState(false);
